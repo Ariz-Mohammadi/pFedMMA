@@ -35,7 +35,7 @@ def load_clip_to_cpu(cfg):
                       "language_depth": 0, "vision_ctx": 0,
                       "language_ctx": 0}
 
-    model = clip.build_model(state_dict or model.state_dict(), design_details)
+    model = clip.build_model(state_dict or model.state_dict())
 
     return model
 
