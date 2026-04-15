@@ -8,6 +8,7 @@ import time
 import os
 import gc
 import copy
+import glob
 from prettytable import PrettyTable
 import numpy as np
 from collections import OrderedDict
@@ -175,8 +176,24 @@ def main(args):
         # Build trainer but skip training loader construction
         local_trainer = build_trainer(cfg)
 
-        print(f"Loading model from: {args.model_dir}")
-        model_path = os.path.join(args.model_dir, "fedadapter_best.pt")  # or "fedadapter_best.pt"
+        ckpt_dir = args.model_dir if args.model_dir else args.output_dir
+        if not ckpt_dir:
+            raise ValueError("No checkpoint directory provided (set --model-dir or --output-dir)")
+
+        preferred = [
+            os.path.join(ckpt_dir, "save.pt"),
+            os.path.join(ckpt_dir, "fedadapter_best.pt"),
+        ]
+        model_path = next((p for p in preferred if os.path.isfile(p)), None)
+        if model_path is None:
+            candidates = glob.glob(os.path.join(ckpt_dir, "*.pt"))
+            if not candidates:
+                raise FileNotFoundError(
+                    f"No checkpoint found in {ckpt_dir} (expected save.pt, fedadapter_best.pt, or any *.pt)"
+                )
+            model_path = max(candidates, key=os.path.getmtime)
+
+        print(f"Loading model from: {model_path}")
         checkpoint = torch.load(model_path, map_location="cpu")
 
         for idx in range(cfg.DATASET.USERS):
@@ -359,6 +376,7 @@ def main(args):
             print("Epoch on server :", epoch)
             if sum(global_test_acc) / len(global_test_acc) >= max(global_test_acc_list):
                 torch.save(local_weights_per, args.output_dir + "/save.pt")
+                torch.save(local_weights_per, os.path.join(args.output_dir, "fedadapter_best.pt"))
 
 
         elif args.model == "local":
@@ -401,6 +419,7 @@ def main(args):
             print("Epoch on server :", epoch)
             if sum(global_test_acc) / len(global_test_acc) >= max(global_test_acc_list):
                 torch.save(local_weights_per, args.output_dir + "/save.pt")
+                torch.save(local_weights_per, os.path.join(args.output_dir, "fedadapter_best.pt"))
 
         elif args.model == 'FedPGP':
             # Reparameterization prompt for personal FL
@@ -460,6 +479,7 @@ def main(args):
 
                     if sum(global_test_acc) / len(global_test_acc) >= max(global_test_acc_list):
                         torch.save(local_weights_per, args.output_dir + "/save.pt")
+                        torch.save(local_weights_per, os.path.join(args.output_dir, "fedadapter_best.pt"))
                 else:
                     for idx in all_users:
                         local_weights_per[idx]['prompt_learner.sigma'] = global_weights
@@ -496,6 +516,7 @@ def main(args):
 
                 if sum(global_test_acc) / len(global_test_acc) >= max(global_test_acc_list):
                     torch.save(local_weights_per, args.output_dir + "/save.pt")
+                    torch.save(local_weights_per, os.path.join(args.output_dir, "fedadapter_best.pt"))
 
         elif args.model == "pFedMMA":
             all_users = list(range(0,cfg.DATASET.USERS))
@@ -578,6 +599,7 @@ def main(args):
 
             if np.mean(global_test_acc) >= max(global_test_acc_list):
                 torch.save(local_adapter_weights, os.path.join(args.output_dir, "fedadapter_best.pt"))
+                torch.save(local_adapter_weights, os.path.join(args.output_dir, "save.pt"))
 
             evaluate_trainer(results, mode=args.model)
             print("Round on server :", epoch)

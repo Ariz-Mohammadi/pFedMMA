@@ -1,0 +1,624 @@
+I need you to trace the exact SERVER AGGREGATION rule in the PFEDMMA repository.
+
+
+
+I already know from the paper that pFedMMA aggregates only the shared adapter/projection block globally while keeping the larger personalized adapter parts local.
+
+
+
+Your job is to find the EXACT code path that performs server aggregation and answer these questions with file:line evidence only.
+
+
+
+STRICT RULES
+
+- Do NOT modify code
+
+- Do NOT explain theory
+
+- Do NOT guess
+
+- Only trace actual code execution with file names, function names, and line numbers
+
+
+
+WHAT I NEED
+
+
+
+1. Find where client updates are collected on the server.
+
+2. Find where server aggregation is performed.
+
+3. Identify exactly which parameters are aggregated:
+
+   - shared adapter?
+
+   - prompt parameters?
+
+   - image-side block?
+
+   - text-side block?
+
+   - any other parameters?
+
+4. Identify exactly which parameters are kept local and NOT aggregated.
+
+5. Identify the aggregation formula:
+
+   - simple average?
+
+   - weighted average by client data size?
+
+   - FedAvg-style weighted mean?
+
+   - FedProx-style change?
+
+   - anything custom?
+
+6. If weights are used, show:
+
+   - where client weights are computed
+
+   - what values are used (e.g. dataset size per client)
+
+7. Show the exact function call chain from:
+
+   federated_main.py
+
+   to the trainer / aggregation utility
+
+   to the actual parameter update on the server.
+
+
+
+FINAL OUTPUT FORMAT
+
+
+
+A. Server aggregation function:
+
+- file
+
+- function
+
+- lines
+
+
+
+B. Exact aggregation rule:
+
+- mathematical description in plain words
+
+- supported by code lines
+
+
+
+C. Parameters aggregated:
+
+- exact parameter names / module names
+
+
+
+D. Parameters kept local:
+
+- exact parameter names / module names
+
+
+
+E. Final conclusion:
+
+“pFedMMA server aggregation in code = ______”
+
+
+
+Be precise. No assumptions.
+
+I need you to inspect the PFEDMMA repository and determine EXACTLY why the current logged metric does not match the paper’s evaluation metrics.
+
+
+
+CONTEXT
+
+- The paper reports: Local / Base / Novel / HM
+
+- The current run logs things like:
+
+  - per-client accuracy/error/macro_f1
+
+  - Global test acc / Global test error / Global test macro_f1
+
+- I suspect the code’s current evaluation path is NOT the same as the paper’s evaluation protocol.
+
+
+
+STRICT RULES
+
+- Do NOT modify code
+
+- Do NOT guess
+
+- Do NOT explain theory
+
+- Only trace actual code paths with file names, function names, and line numbers
+
+- Be precise and concrete
+
+
+
+WHAT I NEED
+
+
+
+1. Find where the following are computed and printed:
+
+   - per-client accuracy
+
+   - Global test acc
+
+   - Global test error
+
+   - Global test macro_f1
+
+
+
+2. Trace the full evaluation call chain:
+
+   - from federated_main.py
+
+   - to local_trainer.test(...)
+
+   - to the evaluator / metric computation
+
+   - to the final printed values
+
+
+
+3. Identify EXACTLY what “Global test acc” means in this repo:
+
+   - Is it the mean of per-client accuracies?
+
+   - Is it weighted by client test size?
+
+   - Is it accuracy on a pooled test set?
+
+   - Is it evaluating local personalized models or one global model?
+
+
+
+4. Trace dataset split logic for base/new:
+
+   - When DATASET.SUBSAMPLE_CLASSES = base
+
+     - which classes are in train?
+
+     - which classes are in test?
+
+   - When DATASET.SUBSAMPLE_CLASSES = new
+
+     - which classes are in train?
+
+     - which classes are in test?
+
+   - Does the current code ever evaluate base and novel jointly in one run?
+
+
+
+5. Search for ANY implementation of:
+
+   - Local metric
+
+   - Base metric
+
+   - Novel metric
+
+   - HM / harmonic mean
+
+   - generalized base-to-new evaluation
+
+   - any code that prints these explicitly
+
+
+
+6. Compare repo evaluation to paper evaluation:
+
+   - Which paper metrics are actually implemented in code?
+
+   - Which paper metrics are missing?
+
+   - Is current “Global test acc” equal to Local / Base / Novel / HM / NONE?
+
+
+
+7. Final answer must include this exact section:
+
+
+
+FINAL MAPPING
+
+- "Global test acc" in code = ______
+
+- This corresponds to paper metric: ______
+
+- Missing paper metrics in code: ______
+
+- Reason current run cannot yet reproduce the paper table: ______
+
+
+
+OUTPUT FORMAT
+
+A. Evaluation print locations
+
+- file
+
+- function
+
+- lines
+
+
+
+B. Metric computation path
+
+- full call chain with file:line references
+
+
+
+C. Exact definition of Global test acc
+
+- plain-language definition
+
+- supporting code lines
+
+
+
+D. Base/new split behavior
+
+- train classes
+
+- test classes
+
+- whether joint base-to-new evaluation exists
+
+
+
+E. Paper-vs-code mismatch
+
+- implemented
+
+- missing
+
+- final mapping
+
+
+
+Be precise. No assumptions.
+
+A. Evaluation print locations
+per-client accuracy (and error/macro_f1)
+file: Dassl/dassl/evaluation/evaluator.py
+function: Classification.evaluate(self)
+lines:
+
+evaluator.py
+Lines 67-90
+    def evaluate(self):
+        results = OrderedDict()
+        acc = 100.0 * self._correct / self._total
+        err = 100.0 - acc
+        macro_f1 = 100.0 * f1_score(
+            self._y_true,
+            self._y_pred,
+            average="macro",
+            labels=np.unique(self._y_true)
+        )
+...
+        print(
+            "=> result\n"
+            f"* total: {self._total:,}\n"
+            f"* correct: {self._correct:,}\n"
+            f"* accuracy: {acc:.1f}%\n"
+            f"* error: {err:.1f}%\n"
+            f"* macro_f1: {macro_f1:.1f}%"
+        )
+Also, the per-client evaluation context string is printed here:
+
+file: Dassl/dassl/engine/trainer.py
+function: SimpleTrainer.test(...)
+lines:
+
+trainer.py
+Lines 482-499
+    def test(self, split=None, is_global=False, current_epoch=0, idx=-1,global_test=False):
+...
+        if split == "val" and self.val_loader is not None:
+            data_loader = self.val_loader
+        else:
+            split = "test"  # in case val_loader is None
+            data_loader = self.fed_test_loader_x_dict[idx]
+        print(f"Evaluate on the client{idx}_{split} set")
+“Global test acc / Global test error / Global test macro_f1”
+file: federated_main.py
+function: main(args) ? inner function evaluate_trainer(results, mode=...)
+lines:
+
+federated_main.py
+Lines 241-276
+    def evaluate_trainer(results, mode="CLIP"):
+...
+        global_test_acc_list.append(sum(global_test_acc)/len(global_test_acc))
+        global_test_error_list.append(sum(global_test_error) / len(global_test_error))
+        global_test_f1_list.append(sum(global_test_f1) / len(global_test_f1))
+...
+        print("Global test acc:", sum(global_test_acc)/len(global_test_acc))
+        print("Global test error:", sum(global_test_error) / len(global_test_error))
+        print("Global test macro_f1:", sum(global_test_f1) / len(global_test_f1))
+And in the pFedMMA branch it also prints a separate “Global Accuracy/Global Loss” line:
+
+file: federated_main.py
+function: main(args) (elif args.model == "pFedMMA":)
+lines:
+
+federated_main.py
+Lines 565-583
+            global_test_acc = [r[0] for r in results]
+            global_test_error = [r[1] for r in results]
+            global_test_f1 = [r[2] for r in results]
+            global_loss = [r[3] for r in results]
+...
+            print(f"[Epoch {epoch}] Global Accuracy: {np.mean(global_test_acc):.2f}, Global Loss: {np.mean(global_loss):.2f}")
+...
+            evaluate_trainer(results, mode=args.model)
+B. Metric computation path (full call chain)
+Server-side evaluation loop ? local_trainer.test(idx=...)
+file: federated_main.py
+function: main(args) (elif args.model == "pFedMMA":)
+lines:
+
+federated_main.py
+Lines 554-563
+            # Global testing
+            results = []
+            for idx in all_users:
+...
+                result = local_trainer.test(idx=idx)
+                client_acc[idx].append(result[0])
+                results.append(result)
+local_trainer.test(...) ? iterates per-client test loader and feeds evaluator
+file: Dassl/dassl/engine/trainer.py
+function: SimpleTrainer.test(...)
+lines:
+
+trainer.py
+Lines 482-533
+    def test(self, split=None, is_global=False, current_epoch=0, idx=-1,global_test=False):
+        self.set_model_mode("eval")
+        self.evaluator.reset()
+...
+            data_loader = self.fed_test_loader_x_dict[idx]
+...
+        for batch_idx, batch in enumerate(tqdm(data_loader)):
+            input, label = self.parse_batch_test(batch)
+...
+            output = self.model_inference(input)
+...
+            self.evaluator.process(output, label)
+...
+        results = self.evaluator.evaluate()
+        results["loss"] = avg_loss
+...
+        return list(results.values())
+Evaluator accumulates predictions ? computes accuracy/error/macro_f1
+file: Dassl/dassl/evaluation/evaluator.py
+function: Classification.process(...) and Classification.evaluate(...)
+lines:
+
+evaluator.py
+Lines 50-60
+    def process(self, mo, gt):
+        pred = mo.max(1)[1]
+        matches = pred.eq(gt).float()
+        self._correct += int(matches.sum().item())
+        self._total += gt.shape[0]
+        self._y_true.extend(gt.data.cpu().numpy().tolist())
+        self._y_pred.extend(pred.data.cpu().numpy().tolist())
+
+evaluator.py
+Lines 67-82
+    def evaluate(self):
+        results = OrderedDict()
+        acc = 100.0 * self._correct / self._total
+        err = 100.0 - acc
+        macro_f1 = 100.0 * f1_score(... average="macro", ...)
+        results["accuracy"] = acc
+        results["error_rate"] = err
+        results["macro_f1"] = macro_f1
+“Global test acc/error/macro_f1” printing = server-side mean across results
+file: federated_main.py
+function: evaluate_trainer(results, ...)
+lines:
+
+federated_main.py
+Lines 251-265
+        global_test_acc = []
+        global_test_error = []
+        global_test_f1 = []
+        for k in range(len(results)):
+            global_test_acc.append(results[k][0])
+            global_test_error.append(results[k][1])
+            global_test_f1.append(results[k][2])
+...
+        print("Global test acc:", sum(global_test_acc)/len(global_test_acc))
+        print("Global test error:", sum(global_test_error) / len(global_test_error))
+        print("Global test macro_f1:", sum(global_test_f1) / len(global_test_f1))
+C. Exact definition of “Global test acc” in this repo
+Plain-language definition (as implemented)
+“Global test acc” = the unweighted arithmetic mean of the per-client accuracy returned by local_trainer.test(idx=client_id) for each client in the evaluated set.
+It is not weighted by client test-set size and is not computed on a pooled global test set.
+
+Supporting code lines (unweighted mean)
+evaluate_trainer(...) uses sum(...) / len(...):
+
+federated_main.py
+Lines 259-265
+        global_test_acc_list.append(sum(global_test_acc)/len(global_test_acc))
+...
+        print("Global test acc:", sum(global_test_acc)/len(global_test_acc))
+In the pFedMMA branch, it also explicitly computes np.mean(...) over the per-client accuracies:
+
+federated_main.py
+Lines 565-577
+            global_test_acc = [r[0] for r in results]
+...
+            print(f"[Epoch {epoch}] Global Accuracy: {np.mean(global_test_acc):.2f}, Global Loss: {np.mean(global_loss):.2f}")
+What dataset each client is evaluated on
+SimpleTrainer.test(...) uses self.fed_test_loader_x_dict[idx] (client-specific loader), not a pooled loader:
+
+
+trainer.py
+Lines 493-496
+            split = "test"
+            data_loader = self.fed_test_loader_x_dict[idx]
+Whether it evaluates personalized models or one global model
+In the pFedMMA path, immediately before local_trainer.test(idx=idx), the code copies client-specific local_adapter_weights[idx] into the model state:
+
+
+federated_main.py
+Lines 556-563
+            for idx in all_users:
+                for name, param in local_adapter_weights[idx].items():
+                        if name in local_trainer.model.state_dict():
+                            local_trainer.model.state_dict()[name].data.copy_(param.data)
+                result = local_trainer.test(idx=idx)
+So “Global test acc” is the mean of personalized model accuracies, each evaluated on that client’s test loader.
+
+D. Base/new split behavior
+How “base” vs “new” is selected (example dataset: OxfordPets)
+file: datasets/oxford_pets.py
+function: OxfordPets.subsample_classes(*args, subsample="all")
+lines (rule):
+
+oxford_pets.py
+Lines 188-217
+    def subsample_classes(*args, subsample="all"):
+        assert subsample in ["all", "base", "new"]
+        if subsample == "all":
+            return args
+        
+        dataset = args[0]
+        labels = set()
+        for item in dataset:
+            labels.add(item.label)
+        labels = list(labels)
+        labels.sort()
+        n = len(labels)
+        m = math.ceil(n / 2)
+        print(f"SUBSAMPLE {subsample.upper()} CLASSES!")
+        if subsample == "base":
+            selected = labels[:m]  # take the first half
+        else:
+            selected = labels[m:]  # take the second half
+What classes are in train vs test when SUBSAMPLE_CLASSES=base or new
+The subsampling is applied identically to train, val, and test (it filters each dataset to only the selected labels and relabels them):
+
+
+oxford_pets.py
+Lines 219-234
+        output = []
+        for dataset in args:
+            dataset_new = []
+            for item in dataset:
+                if item.label not in selected:
+                    continue
+                item_new = Datum(
+                    impath=item.impath,
+                    label=relabeler[item.label],
+                    classname=item.classname
+                )
+                dataset_new.append(item_new)
+            output.append(dataset_new)
+        
+        return output
+And OxfordPets.__init__ calls it on (total_train, val, test) using cfg.DATASET.SUBSAMPLE_CLASSES:
+
+
+oxford_pets.py
+Lines 57-60
+        subsample = cfg.DATASET.SUBSAMPLE_CLASSES
+        train, val, test = self.subsample_classes(total_train, val, test, subsample=subsample)
+Therefore, in this repo’s base/new mode:
+
+base: train contains only base classes; test contains only base classes
+new: train contains only new classes; test contains only new classes
+Does the current code ever evaluate base and novel jointly in one run?
+The provided base-to-new script runs separate processes (separate federated_main.py invocations) with DATASET.SUBSAMPLE_CLASSES base and then ... new; there is no joint evaluation combining both into one metric in a single run.
+
+file: scripts/base2new.sh
+lines:
+
+base2new.sh
+Lines 53-80
+                python federated_main.py \
+...
+                DATASET.SUBSAMPLE_CLASSES base \
+                DATASET.USEALL False
+
+base2new.sh
+Lines 86-115
+                python federated_main.py \
+...
+                --eval-only \
+...
+                DATASET.SUBSAMPLE_CLASSES base \
+                DATASET.USEALL True
+
+base2new.sh
+Lines 120-149
+                python federated_main.py \
+...
+                --eval-only \
+...
+                DATASET.SUBSAMPLE_CLASSES new \
+                DATASET.USEALL True
+E. Paper-vs-code mismatch (what is implemented vs missing)
+Implemented metrics in code
+accuracy / error_rate / macro_f1 computed by evaluator:
+
+evaluator.py
+Lines 69-81
+        acc = 100.0 * self._correct / self._total
+        err = 100.0 - acc
+...
+        results["accuracy"] = acc
+        results["error_rate"] = err
+        results["macro_f1"] = macro_f1
+“Global test acc/error/macro_f1” = mean across clients (unweighted):
+
+federated_main.py
+Lines 259-265
+        print("Global test acc:", sum(global_test_acc)/len(global_test_acc))
+        print("Global test error:", sum(global_test_error) / len(global_test_error))
+        print("Global test macro_f1:", sum(global_test_f1) / len(global_test_f1))
+Missing paper metrics / explicit outputs (searched in repo outputs and code paths shown)
+There is no code path that computes or prints Base / Novel / HM inside the training/evaluation pipeline; instead, base vs new is handled by running with different DATASET.SUBSAMPLE_CLASSES values in separate runs (see scripts/base2new.sh above), and “Global test acc” remains the same mean-of-clients statistic in each run.
+There is no harmonic mean calculation implemented in the evaluation code path shown (evaluator returns only accuracy, error_rate, macro_f1, plus loss added in test()).
+FINAL MAPPING
+"Global test acc" in code = unweighted mean of per-client accuracies, where each accuracy is computed on that client’s fed_test_loader_x_dict[idx] using that client’s loaded model weights (personalized in pFedMMA).
+
+Evidence: mean computation in evaluate_trainer and per-client loader in SimpleTrainer.test and per-client model weight loading in pFedMMA test loop:
+federated_main.py evaluate_trainer: 259:265:/cta/users/undergrad2/pfedmma/federated_main.py
+trainer.py per-client loader: 493:496:/cta/users/undergrad2/pfedmma/Dassl/dassl/engine/trainer.py
+federated_main.py per-client weight load then test: 556:563:/cta/users/undergrad2/pfedmma/federated_main.py
+This corresponds to paper metric: NONE of {Local, Base, Novel, HM} directly as a single named metric in-code; it is simply “mean client accuracy on the configured subsampled test split”. (Base vs Novel is only indirectly controlled by running with DATASET.SUBSAMPLE_CLASSES base vs new.)
+
+Evidence: base/new subsampling is a dataset filter applied to (train,val,test) and selected by config; no HM computation exists in evaluator outputs:
+subsample filter: 188:234:/cta/users/undergrad2/pfedmma/datasets/oxford_pets.py
+evaluator outputs: 67:82:/cta/users/undergrad2/pfedmma/Dassl/dassl/evaluation/evaluator.py
+Missing paper metrics in code: explicit computation/printing of Local / Base / Novel / HM as in the paper table; specifically HM (harmonic mean) is not computed by any evaluator return path shown.
+
+Evidence: evaluator returns only accuracy, error_rate, macro_f1 (and loss is added in test()):
+evaluator returns: 67:82:/cta/users/undergrad2/pfedmma/Dassl/dassl/evaluation/evaluator.py
+loss appended: 520:533:/cta/users/undergrad2/pfedmma/Dassl/dassl/engine/trainer.py
+Reason current run cannot yet reproduce the paper table: this repo’s evaluation prints per-client accuracy/error/macro_f1 and “Global test acc/error/macro_f1” as means across clients, while Base/Novel evaluation is implemented as separate runs with different DATASET.SUBSAMPLE_CLASSES (see scripts/base2new.sh), and there is no in-code aggregation into Base/Novel/HM outputs.
+
+Evidence: separate base/new eval-only invocations in script: 86:149:/cta/users/undergrad2/pfedmma/scripts/base2new.sh
